@@ -1,3 +1,4 @@
+#pragma once //Just in case this file is included multiple times in a single translation unit.
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 
@@ -9,6 +10,11 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+
+//My includes
+#include <vector>
+#include <cmath>
+#include <cstddef>
 
 // This is our main file for the OpenGL application.
 // It sets up a window, compiles shaders, and renders a lit, textured cube.
@@ -39,6 +45,87 @@ namespace
 {
 constexpr int WindowWidth = 900;
 constexpr int WindowHeight = 600;
+
+struct Vertex 
+{
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec2 uv;
+};
+
+struct SphereMesh // A simple structure to hold vertex and index data for a sphere mesh
+{
+    std::vector<Vertex> vertices;
+    std::vector<unsigned int> indices;
+};
+
+SphereMesh createSphere(
+    unsigned int latitudeSegments,
+    unsigned int longitudeSegments,
+	float radius) // Generates a sphere mesh with the specified number of latitude and longitude segments and radius
+{
+    SphereMesh mesh;
+
+    for (unsigned int y = 0; y <= latitudeSegments; ++y)
+    {
+        float v = static_cast<float>(y) /
+            static_cast<float>(latitudeSegments);
+
+        float theta = v * glm::pi<float>();
+
+        for (unsigned int x = 0; x <= longitudeSegments; ++x)
+        {
+            float u = static_cast<float>(x) /
+                static_cast<float>(longitudeSegments);
+
+            float phi = u * glm::two_pi<float>();
+
+            glm::vec3 position;
+
+            position.x =
+				radius * std::sin(theta) * std::cos(phi); //sin(theta) * cos(phi)
+
+            position.y =
+				radius * std::cos(theta); //cos(theta)
+
+            position.z =
+                radius * std::sin(theta) * std::sin(phi); //sin(theta) * sin(phi)
+
+            glm::vec3 normal =
+                glm::normalize(position); // Calculate the normal vector by normalizing the position vector
+
+			glm::vec2 uv(u, v); // Texture coordinates are based on the normalized latitude and longitude values
+            
+            mesh.vertices.push_back({
+                position,
+                normal,
+                uv
+                });
+        }
+    }
+
+    for (unsigned int y = 0; y < latitudeSegments; ++y)
+    {
+        for (unsigned int x = 0; x < longitudeSegments; ++x)
+        {
+            unsigned int first =
+                y * (longitudeSegments + 1) + x;
+
+            unsigned int second =
+                first + longitudeSegments + 1;
+
+            mesh.indices.push_back(first);
+            mesh.indices.push_back(second);
+            mesh.indices.push_back(first + 1);
+
+            mesh.indices.push_back(second);
+            mesh.indices.push_back(second + 1);
+            mesh.indices.push_back(first + 1);
+        }
+    }
+
+    return mesh;
+}
 
 void glfwErrorCallback(int error, const char* description)
 {
@@ -178,8 +265,11 @@ int main()
     std::cout << "OpenGL: " << glGetString(GL_VERSION) << '\n';
     std::cout << "Renderer: " << glGetString(GL_RENDERER) << '\n';
 
-    glEnable(GL_DEPTH_TEST);
+	// Create a sphere mesh with 64 latitude and longitude segments and a radius of 1.0
+    SphereMesh sphere =
+        createSphere(64, 64, 1.0f);
 
+    /*
     // position.xyz, normal.xyz, uv.xy
     // Each face has its own vertices so it can have one clear, flat normal.
     // The duplicated vertices also let every face own a full UV square.
@@ -232,30 +322,67 @@ int main()
          0.5f, -0.5f,  0.5f,   0.0f, -1.0f,  0.0f,   1.0f, 1.0f,
         -0.5f, -0.5f,  0.5f,   0.0f, -1.0f,  0.0f,   0.0f, 1.0f
     };
-
+    */
     GLuint vao = 0;
     GLuint vbo = 0;
+    GLuint ebo = 0;
+
 
     glGenVertexArrays(1, &vao);
     glGenBuffers(1, &vbo);
+    glGenBuffers(1, &ebo);
 
     glBindVertexArray(vao);
 
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 
+        sizeof(Vertex) * sphere.vertices.size()
+        , sphere.vertices.data(),
+		GL_STATIC_DRAW); // Upload vertex data to the GPU
 
-    constexpr GLsizei stride = 8 * sizeof(float);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo); 
+
+    glBufferData(
+        GL_ELEMENT_ARRAY_BUFFER,
+        sphere.indices.size() * sizeof(unsigned int),
+        sphere.indices.data(),
+        GL_STATIC_DRAW
+	); // Upload index data to the GPU
+    
+	//Commented out because we are using the Vertex struct instead of raw float data.
+    //constexpr GLsizei stride = 8 * sizeof(float);
+	// The stride is the total size of one vertex, which includes position (3 floats), normal (3 floats), and uv (2 floats).
+    constexpr GLsizei stride = sizeof(Vertex);
+
+	// Set up vertex attribute pointers for position, normal, and uv coordinates.
+	// Changed 8 * sizeof(float) to sizeof(Vertex) because we are using the Vertex struct instead of raw float data.
+	// This is due to changing the shape box to a sphere, which requires more complex vertex data (position, normal, uv) than a simple box.
 
     glVertexAttribPointer(
-        0, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(0));
+        0, 
+        3, 
+        GL_FLOAT, 
+        GL_FALSE, 
+        stride, 
+		reinterpret_cast<void*>(offsetof(Vertex, position)));
     glEnableVertexAttribArray(0);
 
     glVertexAttribPointer(
-        1, 3, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(3 * sizeof(float)));
+        1,
+        3, 
+        GL_FLOAT, 
+        GL_FALSE, 
+        stride, 
+        reinterpret_cast<void*>(offsetof(Vertex, normal)));
     glEnableVertexAttribArray(1);
 
     glVertexAttribPointer(
-        2, 2, GL_FLOAT, GL_FALSE, stride, reinterpret_cast<void*>(6 * sizeof(float)));
+        2,
+        2,
+        GL_FLOAT,
+        GL_FALSE, 
+        stride, 
+        reinterpret_cast<void*>(offsetof(Vertex, uv)));
     glEnableVertexAttribArray(2);
 
     glBindVertexArray(0);
@@ -347,8 +474,10 @@ int main()
     // A fixed rotation exposes several faces while keeping the known-good image
     // stable and easy to compare between runs.
     glm::mat4 model(1.0f);
-    model = glm::rotate(model, glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    model = glm::rotate(model, glm::radians(30.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+    
+	//Since we are using a sphere mesh, we don't need to rotate it to expose different faces. The sphere looks the same from all angles, so we can leave the model matrix as the identity matrix.
+    //model = glm::rotate(model, glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    //model = glm::rotate(model, glm::radians(30.0f), glm::vec3(0.0f, 1.0f, 0.0f));
 
     // Positions and normals transform differently. The inverse-transpose keeps
     // normals perpendicular to their surfaces, including under non-uniform scale.
@@ -431,7 +560,51 @@ int main()
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, texture);
         glBindVertexArray(vao);
-        glDrawArrays(GL_TRIANGLES, 0, 36);
+
+        glEnable(GL_DEPTH_TEST);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        // Transparent object should not write into depth buffer
+        glDepthMask(GL_FALSE);
+
+        glEnable(GL_CULL_FACE);
+
+        // 1. Render back faces first
+        glCullFace(GL_FRONT);
+
+        glDrawElements(
+            GL_TRIANGLES,
+            static_cast<GLsizei>(sphere.indices.size()),
+            GL_UNSIGNED_INT,
+            nullptr
+        );
+
+        // 2. Render front faces afterwards
+        glCullFace(GL_BACK);
+
+        glDrawElements(
+            GL_TRIANGLES,
+            static_cast<GLsizei>(sphere.indices.size()),
+            GL_UNSIGNED_INT,
+            nullptr
+        );
+
+        // Restore normal state
+        glDepthMask(GL_TRUE);
+
+
+		//Changed from glDrawArrays to glDrawElements to use the index buffer for rendering the sphere mesh.
+		//This is necessary because the sphere mesh has a large number of vertices and using an index 
+        //buffer reduces the amount of data that needs to be sent to the GPU.
+        
+        //glDrawArrays(GL_TRIANGLES, 0, 36);
+        glDrawElements(
+            GL_TRIANGLES,
+            static_cast<GLsizei>(sphere.indices.size()),
+            GL_UNSIGNED_INT,
+            nullptr
+		); // Draw the sphere using the index buffer
 
         glfwSwapBuffers(window);
         glfwPollEvents();
@@ -440,6 +613,7 @@ int main()
     glDeleteProgram(shaderProgram);
     glDeleteTextures(1, &texture);
     glDeleteBuffers(1, &vbo);
+	glDeleteBuffers(1, &ebo); // Delete the index buffer object because we created ebo for the sphere mesh.
     glDeleteVertexArrays(1, &vao);
 
     glfwDestroyWindow(window);
