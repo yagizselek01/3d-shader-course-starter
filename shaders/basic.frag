@@ -68,7 +68,7 @@ void main()
 
 //NOTES FOR REPORT DOCUMENT
 /*
-1. Changing the shape cube to sphere was done by changing the vertex shader to generate a sphere instead of a cube. 
+1. Changing the shape cube to sphere was done to enhance the holographic effect.
 The fragment shader was modified to implement a holographic effect using the Fresnel effect, 
 which simulates how light interacts with the surface of the sphere. The Fresnel effect was calculated based 
 on the angle between the view direction and the surface normal, resulting in a color that changes based on the viewing angle. 
@@ -77,8 +77,9 @@ It represents much more better in a sphere than a cube, as the curvature of the 
 
 2. There was a fersnel problem in the previous implementation, 
 because I was using (1.0 - max(dot(N, V), 0.0)) instead of (1.0 - abs(dot(N, V))) to calculate the Fresnel effect.)
-This caused the Fersnel effect to be less pronounced in the back of the sphere, because it was always negative when the dot product 
-was negative, resulting in a less dynamic and less realistic holographic effect.
+This caused the Fersnel effect to be max in the back of the sphere, because the dot product of the normal and view 
+direction would be negative when the view direction is opposite to the normal, with the (1.0 - max(dot(N, V), 0.0)) equation
+it's always 1.0.
 
 3. To properly render the semi-transparent holographic sphere, I implemented the following code in main.cpp:
 "

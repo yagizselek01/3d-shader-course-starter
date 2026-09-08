@@ -598,13 +598,13 @@ int main()
 		//This is necessary because the sphere mesh has a large number of vertices and using an index 
         //buffer reduces the amount of data that needs to be sent to the GPU.
         
-        //glDrawArrays(GL_TRIANGLES, 0, 36);
+      /*  //glDrawArrays(GL_TRIANGLES, 0, 36);
         glDrawElements(
             GL_TRIANGLES,
             static_cast<GLsizei>(sphere.indices.size()),
             GL_UNSIGNED_INT,
             nullptr
-		); // Draw the sphere using the index buffer
+		); // Draw the sphere using the index buffer*/
 
         glfwSwapBuffers(window);
         glfwPollEvents();
