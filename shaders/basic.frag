@@ -1,126 +1,130 @@
 #version 330 core
-
-// Rasterization generates fragments for the covered samples of the cube.
-// This shader uses interpolated surface data to produce a colour for each fragment.
-
 in vec3 worldPosition;
 in vec3 worldNormal;
-in vec2 uv;
-
-// lightDirection points from the surface toward the directional light.
-uniform vec3 lightDirection;
-uniform vec3 lightColor;
+ 
 uniform vec3 viewPosition;
-uniform vec3 baseColor;
-uniform float ambientStrength;
-uniform float specularStrength;
-uniform float shininess;
-uniform sampler2D surfaceTexture;
+uniform float time;
 
 out vec4 FragColor; // The colour produced for this fragment.
 
+float hash(vec2 p) // Hash function to generate pseudo-random values based on input coordinates
+{
+    p = fract(p * vec2(123.34, 456.21));
+    p += dot(p, p + 45.32);
+    return fract(p.x * p.y);
+}
+
 void main()
 {
-/*
-    vec4 texel = texture(surfaceTexture, uv);
-    vec3 materialColor = texel.rgb * baseColor;
-
-    // Interpolation can change a normal's length, so normalize per fragment.
-    vec3 N = normalize(worldNormal);
-    vec3 L = normalize(lightDirection);
-
-    float diffuse = max(dot(N, L), 0.0);
-
-    vec3 V = normalize(viewPosition - worldPosition);
-    vec3 H = normalize(L + V);
-
-    // Only a surface facing the light may receive a specular highlight.
-    float specular = 0.0;
-    if (diffuse > 0.0)
-    {
-        specular = pow(max(dot(N, H), 0.0), shininess);
-    }
-
-    vec3 ambientColor = ambientStrength * materialColor * lightColor;
-    vec3 diffuseColor = diffuse * materialColor * lightColor;
-    vec3 specularColor = specularStrength * specular * lightColor;
-
-    vec3 color = ambientColor + diffuseColor + specularColor;
-    FragColor = vec4(color, 1.0);
-
-    */
-    // For fersnel effect, we need to calculate the view direction and the normal direction
+    // Normalize the interpolated world-space normal and construct the
+    // fragment-to-camera view direction used by the Fresnel-style rim.
     vec3 N = normalize(worldNormal);
     vec3 V = normalize(viewPosition - worldPosition);
 
 
-    // Calculate the fersnel effect
-    float fersnel = pow(1.0 - abs(dot(N, V)), 2.4) * 0.8 + 0.2;
+    // Calculate the fresnel effect
+    float fresnel = 1.0 - abs(dot(N, V));
 
-    vec3 hologramColor = vec3(0.988, 0.306, 0.306);
+    float fresnelRim = pow(fresnel, 2.4);
 
-    vec3 finalColor = fersnel * hologramColor;
-    float alpha = 0.15 + fersnel * 0.40; // Adjust the alpha value based on the fersnel effect
+    // Calculate the rim effect based on the fresnel effect
+    float fieldIntensity = fresnelRim * 0.8 + 0.2;
+    
+    // Procedural scanlines and coordinate distortion
 
+    vec2 p = worldPosition.xy;
+
+    // coordinate jitter
+    float jitterOffset =
+    0.03 * sin(p.x * 10.0 + time * 0.8) +
+    0.01 * sin(p.y * 10.0 + time * 0.4);
+
+    // small noisy breakup
+    float breakupNoise =
+    hash(vec2(floor(p.x * 30.0), floor(p.y * 30.0 + time * 6.0)));
+
+    // warp the y coordinates of the lines to create a dynamic effect
+    float warpedYline01 = p.y + jitterOffset + (breakupNoise - 0.5) * 0.5;
+
+    float warpedYline02 = worldPosition.y + 0.05 * sin(worldPosition.x * 8.0 + time * 2.0);
+
+    float line01 = sin(warpedYline01 * 72.0 - time * 8.0) * 0.5 + 0.5;
+
+    float line02 = sin(warpedYline02 * 25.0 - time * 4.0) * 0.5 + 0.5;
+
+    // make the threshold vary slightly across the surface
+    float threshold =
+    0.92 + breakupNoise * 0.06;
+
+    // create a mask for the line breaks based on the breakup noise
+    float lineBreakMask = smoothstep(0.25, 0.75, hash(vec2(floor(p.x * 12.0), floor(p.y * 12.0 - time * 3.0))));
+
+    float mainLines = smoothstep(threshold, 1.0, line01);
+    float energyBands = smoothstep(0.80, 0.86, line02);
+
+    mainLines *= lineBreakMask;
+
+    // create a pulsing effect for the lines and energy bands
+    float pulse = 0.8 + 0.2 * sin(time * 2.5);
+
+    // create a main pulse effect for the overall alpha of the holographic sphere, 
+    //which will make it appear to pulse in and out
+    float mainPulse = 0.5 + 0.5 * sin(time * 1.5);
+
+    // combine the main lines and energy bands to create a final line intensity value
+    float lineIntensity = (mainLines * 0.16 + energyBands * 0.7) * (0.4 + 0.6 * pulse);
+
+    //main color of the holographic sphere and the bright color for the lines and energy bands
+    vec3 hologramColor = vec3(0.639, 0.110, 0.110);
+    vec3 brightColor = vec3(0.831, 0.447, 0.208);
+
+    // calculate the final brightness of the holographic sphere based on the rim effect and line intensity
+    float brightness = 0.15 + fieldIntensity * 1.2 + lineIntensity;
+
+    // mix the hologram color and bright color based on the line intensity, and multiply by the final brightness
+    vec3 finalColor = mix(hologramColor, brightColor, lineIntensity) * brightness;
+
+    // calculate the final alpha value based on the rim effect and main pulse, to create a semi-transparent holographic appearance
+    float alpha = 0.02 + fieldIntensity * 0.6 + mainPulse * 0.15; 
+
+    // set the final color and alpha value for the fragment
     FragColor = vec4(finalColor, alpha);
 }
 
 
 //NOTES FOR REPORT DOCUMENT
 /*
-1. Changing the shape cube to sphere was done to enhance the holographic effect.
-The fragment shader was modified to implement a holographic effect using the Fresnel effect, 
-which simulates how light interacts with the surface of the sphere. The Fresnel effect was calculated based 
-on the angle between the view direction and the surface normal, resulting in a color that changes based on the viewing angle. 
-The final color and alpha value were adjusted to create a semi-transparent holographic appearance.
-It represents much more better in a sphere than a cube, as the curvature of the sphere allows for more dynamic light interactions and reflections, enhancing the holographic effect.
+1. Sphere and Fresnel
+The original cube was replaced with a procedurally generated sphere to make the view-dependent rim effect easier to observe. A sphere has continuously varying surface normals, 
+producing a smooth change in the dot product between the world-space normal and the view direction. On the original cube, each flat face had a largely constant normal, causing the Fresnel response to change abruptly between faces.
 
-2. There was a fersnel problem in the previous implementation, 
-because I was using (1.0 - max(dot(N, V), 0.0)) instead of (1.0 - abs(dot(N, V))) to calculate the Fresnel effect.)
-This caused the Fersnel effect to be max in the back of the sphere, because the dot product of the normal and view 
-direction would be negative when the view direction is opposite to the normal, with the (1.0 - max(dot(N, V), 0.0)) equation
-it's always 1.0.
+In the fragment shader, I use a stylized Fresnel-inspired approximation based on 1 - |N · V|. 
+The value increases as the viewing direction becomes more perpendicular to the surface normal, producing a stronger rim near the silhouette.
 
-3. To properly render the semi-transparent holographic sphere, I implemented the following code in main.cpp:
-"
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+2. Two-sided Fresnel problem
+An earlier implementation used 1.0 - max(dot(N, V), 0.0). Because the sphere is rendered from both sides, 
+back-facing fragments can produce negative N · V values. Clamping these values to zero caused the resulting rim term to become exactly 1.0, 
+making large parts of the back-facing surface fully bright.
 
-        // Transparent object should not write into depth buffer
-        glDepthMask(GL_FALSE);
+I changed the calculation to use abs(dot(N, V)), creating a symmetric angular response for the two-sided force field. 
+This is a stylized choice for the holographic effect rather than a physically complete Fresnel model.
 
-        glEnable(GL_CULL_FACE);
+3. Transparency and rendering order
+Standard alpha blending is order-dependent, so the order in which transparent surfaces are rendered affects the final colour. 
+For the convex sphere, I render the back faces first and the front faces second. Front-face culling is used during the first pass, 
+followed by back-face culling during the second pass.
 
-        // 1. Render back faces first
-        glCullFace(GL_FRONT);
+Depth testing remains enabled so the force field still respects previously rendered opaque geometry, 
+while depth writes are disabled during the transparent passes using glDepthMask(GL_FALSE). This allows both the back and front surfaces of the transparent sphere to contribute to the final blended colour.
 
-        glDrawElements(
-            GL_TRIANGLES,
-            static_cast<GLsizei>(sphere.indices.size()),
-            GL_UNSIGNED_INT,
-            nullptr
-        );
+This two-pass method works well for the convex sphere used in this project, but it is not a general solution for complex or intersecting transparent geometry.
 
-        // 2. Render front faces afterwards
-        glCullFace(GL_BACK);
+4. Procedural scanlines and distortion
+The holographic surface combines the Fresnel-style rim with two animated procedural patterns: narrow main scanlines and broader energy bands. Both are generated using sine functions evaluated from world-space coordinates and time.
 
-        glDrawElements(
-            GL_TRIANGLES,
-            static_cast<GLsizei>(sphere.indices.size()),
-            GL_UNSIGNED_INT,
-            nullptr
-        );
+The main scanline coordinates are distorted using two sine-based offsets and a hash-generated pseudo-random value. The hash is evaluated on quantized coordinates using floor(), producing discrete spatial and temporal variation that gives the field a deliberately unstable, glitch-like appearance.
 
-        // Restore normal state
-        glDepthMask(GL_TRUE);
-"
-It ensures that the back faces of the sphere are rendered first, followed by the front faces,
-so that the semi-transparent effect is correctly displayed, allowing for proper blending of the colors and transparency.
-If the back faces were rendered after the front faces, the front faces would occlude the back faces,
-resulting in an incorrect visual representation of the holographic effect. By rendering the back faces first, 
-the blending of colors and transparency is preserved, creating a more realistic and visually appealing holographic sphere.
-The problem was weird shading and tringular artifacts on the sphere, which was caused by the incorrect rendering order of the back and front faces.
-Culling the front faces first and then rendering the back faces allowed for proper blending and eliminated the artifacts, resulting in a smooth and visually accurate holographic effect on the sphere.
+A second hash-based mask attenuates different sections of the main scanlines, reducing their uniformity. smoothstep() is used to shape the sine waves into controlled bands and lines.
 
+The final RGB colour combines the view-dependent rim with the animated procedural line intensity. Alpha is controlled separately using the rim and a slower global pulse, producing a semi-transparent field whose opacity changes over time.
 */
