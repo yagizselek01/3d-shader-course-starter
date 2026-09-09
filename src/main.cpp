@@ -14,17 +14,21 @@
 #include <cmath>
 #include <cstddef>
 #include <glm/gtc/constants.hpp>
+#include "DebugControls.h"
 
 namespace
 {
 constexpr int WindowWidth = 900;
 constexpr int WindowHeight = 600;
 
+constexpr unsigned int SphereLatitudeSegments = 64;
+constexpr unsigned int SphereLongitudeSegments = 64;
+constexpr float SphereRadius = 1.0f;
+
 struct Vertex 
 {
     glm::vec3 position;
     glm::vec3 normal;
-    glm::vec2 uv;
 };
 
 struct SphereMesh // A simple structure to hold vertex and index data for a sphere mesh
@@ -65,17 +69,6 @@ SphereMesh createSphere(
 
             position.z =
                 radius * std::sin(theta) * std::sin(phi); //sin(theta) * sin(phi)
-
-            glm::vec3 normal =
-                glm::normalize(position); // Calculate the normal vector by normalizing the position vector
-
-			glm::vec2 uv(u, v); // Texture coordinates are based on the normalized latitude and longitude values
-            
-            mesh.vertices.push_back({
-                position,
-                normal,
-                uv
-                });
         }
     }
 
@@ -241,8 +234,11 @@ int main()
     std::cout << "Renderer: " << glGetString(GL_RENDERER) << '\n';
 
 	// Create a sphere mesh with 64 latitude and longitude segments and a radius of 1.0
-    SphereMesh sphere =
-        createSphere(64, 64, 1.0f);
+    SphereMesh sphere = createSphere(
+        SphereLatitudeSegments,
+        SphereLongitudeSegments,
+        SphereRadius
+    );
 
     GLuint vao = 0;
     GLuint vbo = 0;
@@ -292,15 +288,6 @@ int main()
         reinterpret_cast<void*>(offsetof(Vertex, normal)));
     glEnableVertexAttribArray(1);
 
-    glVertexAttribPointer(
-        2,
-        2,
-        GL_FLOAT,
-        GL_FALSE, 
-        stride, 
-        reinterpret_cast<void*>(offsetof(Vertex, uv)));
-    glEnableVertexAttribArray(2);
-
     glBindVertexArray(0);
 
     GLuint shaderProgram = 0;
@@ -321,39 +308,6 @@ int main()
         return 1;
     }
 
-    // Four rows of four RGBA texels, listed from the texture's bottom row up.
-    // The two colours form a checker. Their alternating alpha values are not
-    // used by the known-good opaque shader, but remain available as mask data.
-    constexpr int TextureWidth = 4;
-    constexpr int TextureHeight = 4;
-    constexpr unsigned char texturePixels[] = {
-        230,  70,  50, 255,    40, 180, 220,  64,   230,  70,  50, 255,    40, 180, 220,  64,
-         40, 180, 220,  64,   230,  70,  50, 255,    40, 180, 220,  64,   230,  70,  50, 255,
-        230,  70,  50, 255,    40, 180, 220,  64,   230,  70,  50, 255,    40, 180, 220,  64,
-         40, 180, 220,  64,   230,  70,  50, 255,    40, 180, 220,  64,   230,  70,  50, 255
-    };
-
-    GLuint texture = 0;
-    glGenTextures(1, &texture);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    glTexImage2D(
-        GL_TEXTURE_2D,
-        0,
-        GL_RGBA8,
-        TextureWidth,
-        TextureHeight,
-        0,
-        GL_RGBA,
-        GL_UNSIGNED_BYTE,
-        texturePixels);
-
     // Uniform locations identify the three matrix inputs in the vertex shader.
     // We ask for them once after linking, then use the locations when sending
     // matrix values from the CPU to the GPU before drawing.
@@ -362,9 +316,9 @@ int main()
     const GLint projectionLocation = glGetUniformLocation(shaderProgram, "projection");
     const GLint normalMatrixLocation = glGetUniformLocation(shaderProgram, "normalMatrix");
     const GLint viewPositionLocation = glGetUniformLocation(shaderProgram, "viewPosition");
-    const GLint surfaceTextureLocation =
-        glGetUniformLocation(shaderProgram, "surfaceTexture");
     const GLint timeLocation = glGetUniformLocation(shaderProgram, "time");
+    const GLint debugModeLocation =
+        glGetUniformLocation(shaderProgram, "debugMode");
 
     if (modelLocation == -1 ||
         viewLocation == -1 ||
@@ -382,36 +336,23 @@ int main()
             << "This is expected if the current shader experiment does not use it.\n";
     }
 
-    // A fixed rotation exposes several faces while keeping the known-good image
-    // stable and easy to compare between runs.
+    // The sphere remains centered at the world origin.
+    // The identity model matrix therefore requires no additional transform.
     glm::mat4 model(1.0f);
-    
-	//Since we are using a sphere mesh, we don't need to rotate it to expose different faces. The sphere looks the same from all angles, so we can leave the model matrix as the identity matrix.
-    //model = glm::rotate(model, glm::radians(20.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-    //model = glm::rotate(model, glm::radians(30.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+
 
     // Positions and normals transform differently. The inverse-transpose keeps
     // normals perpendicular to their surfaces, including under non-uniform scale.
     const glm::mat3 normalMatrix =
         glm::transpose(glm::inverse(glm::mat3(model)));
 
-    // The view matrix converts world-space positions into view space. Moving the
-    // world by the negative viewer position places the cube in front of the
-    // viewer without introducing a camera class or camera controls.
+    // The view matrix converts world-space positions into view space.
+    // Moving the world by the negative camera position places the
+    // force-field sphere in front of the camera.
     const glm::vec3 viewPosition(0.0f, 0.0f, 3.0f);
     const glm::mat4 view =
         glm::translate(glm::mat4(1.0f), -viewPosition);
 
-    // This direction points from the surface toward the light. It is not axis-
-    // aligned, so more than one visible face receives diffuse illumination.
-    const glm::vec3 lightDirection =
-        glm::normalize(glm::vec3(0.6f, 1.0f, 0.8f));
-    const glm::vec3 lightColor(1.0f, 0.96f, 0.90f);
-    // White leaves the generated texture's sampled RGB values untinted.
-    const glm::vec3 baseColor(1.0f);
-    const float ambientStrength = 0.12f;
-    const float specularStrength = 0.28f;
-    const float shininess = 32.0f;
 
     // These values define the perspective viewing volume. Keeping them named and
     // visible makes it easy to ask: what changes when the field of view narrows,
@@ -420,10 +361,14 @@ int main()
     const float nearPlane = 0.1f;
     const float farPlane = 100.0f;
 
+    // Current shader visualization mode.
+    // Starts with the normal final hologram.
+    DebugMode debugMode = DebugMode::Final;
+
     while (glfwWindowShouldClose(window) == GLFW_FALSE)
     {
         processInput(window);
-
+        updateDebugControls(window, debugMode);
         // Framebuffer dimensions can differ from window dimensions on high-DPI
         // displays. Reading the current framebuffer size keeps projected shapes
         // in the correct proportions after a resize. A minimized window may have
@@ -449,6 +394,11 @@ int main()
 
         glUseProgram(shaderProgram);
 
+        glUniform1i(
+            debugModeLocation,
+            static_cast<int>(debugMode)
+        );
+
         // glm::value_ptr exposes each GLM matrix as contiguous float data.
         // GL_FALSE means OpenGL should use the conventional GLM/OpenGL matrix
         // layout directly, without transposing it during the upload.
@@ -459,11 +409,8 @@ int main()
         glUniformMatrix3fv(
             normalMatrixLocation, 1, GL_FALSE, glm::value_ptr(normalMatrix));
         glUniform3fv(viewPositionLocation, 1, glm::value_ptr(viewPosition));
-        glUniform1i(surfaceTextureLocation, 0);
         glUniform1f(timeLocation, static_cast<float>(glfwGetTime()));
 
-        glActiveTexture(GL_TEXTURE0);
-        glBindTexture(GL_TEXTURE_2D, texture);
         glBindVertexArray(vao);
 
         glEnable(GL_DEPTH_TEST);
@@ -505,7 +452,6 @@ int main()
     }
 
     glDeleteProgram(shaderProgram);
-    glDeleteTextures(1, &texture);
     glDeleteBuffers(1, &vbo);
 	glDeleteBuffers(1, &ebo);
     glDeleteVertexArrays(1, &vao);
