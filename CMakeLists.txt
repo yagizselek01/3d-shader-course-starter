@@ -48,6 +48,7 @@ target_include_directories(glad
 add_executable(shader_course
     src/main.cpp
     src/DebugControls.cpp
+    src/QualityControls.cpp
 
 )
 

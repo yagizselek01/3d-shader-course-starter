@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <glm/gtc/constants.hpp>
 #include "DebugControls.h"
+#include "QualityControls.h"
 
 namespace
 {
@@ -69,6 +70,14 @@ SphereMesh createSphere(
 
             position.z =
                 radius * std::sin(theta) * std::sin(phi); //sin(theta) * sin(phi)
+
+            glm::vec3 normal =
+                glm::normalize(position);
+
+            mesh.vertices.push_back({
+                position,
+                normal
+                });
         }
     }
 
@@ -365,10 +374,15 @@ int main()
     // Starts with the normal final hologram.
     DebugMode debugMode = DebugMode::Final;
 
+    // Start in full quality so the visual result remains
+    // identical to the current shader during integration.
+    QualityMode qualityMode = QualityMode::Full;
+
     while (glfwWindowShouldClose(window) == GLFW_FALSE)
     {
         processInput(window);
         updateDebugControls(window, debugMode);
+        updateQualityControls(window, qualityMode);
         // Framebuffer dimensions can differ from window dimensions on high-DPI
         // displays. Reading the current framebuffer size keeps projected shapes
         // in the correct proportions after a resize. A minimized window may have

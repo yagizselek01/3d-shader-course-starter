@@ -19,5 +19,4 @@ void main()
     worldNormal = normalMatrix * aNormal;
 
     gl_Position = projection * view * world;
-
 }
