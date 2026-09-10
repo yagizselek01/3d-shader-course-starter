@@ -5,6 +5,7 @@ in vec3 worldNormal;
 uniform vec3 viewPosition;
 uniform float time;
 uniform int debugMode;
+uniform int qualityLevel;
 
 out vec4 FragColor; // The colour produced for this fragment.
 
@@ -87,17 +88,38 @@ void main()
 
     vec2 pos = worldPosition.xy;
 
-    vec2 noiseCoord = pos * NoiseScale + time * NoiseScrollSpeed;
+    // Simple quality uses the original coordinate domain.
+    // Full quality can replace this with the noise-warped domain.
+    vec2 warpedPos = pos;
 
-    float noiseX = valueNoise(noiseCoord);
+    // Keep these available for debug visualization.
+    float noiseX = 0.0;
+    float noiseY = 0.0;
 
-    float noiseY = valueNoise(noiseCoord + NoiseSampleOffset);
+    // Noise is required by the full effect and by the debug modes
+    // that explicitly visualize value noise or warped scanlines.
+    bool needsNoise = qualityLevel == 1 || debugMode == 4 || debugMode == 6;
 
-    vec2 noiseWarp = vec2(noiseX, noiseY) * 2.0 - 1.0;
-    
-    // warp the coordinates of the scanlines to create a dynamic effect
-    vec2 warpedPos = pos + noiseWarp * WarpStrength;
+if (needsNoise)
+{
+    vec2 noiseCoord =
+        pos * NoiseScale +
+        time * NoiseScrollSpeed;
 
+    noiseX =
+        valueNoise(noiseCoord);
+
+    noiseY =
+        valueNoise(
+            noiseCoord + NoiseSampleOffset
+        );
+
+    vec2 noiseWarp =
+        vec2(noiseX, noiseY) * 2.0 - 1.0;
+
+    warpedPos =
+        pos + noiseWarp * WarpStrength;
+}
     
     vec2 effectPos = (debugMode == 7) ? pos : warpedPos;
 

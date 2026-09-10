@@ -16,187 +16,195 @@
 #include <glm/gtc/constants.hpp>
 #include "DebugControls.h"
 #include "QualityControls.h"
+#include "GpuTimer.h"
+#include "Benchmark.h"
 
 namespace
 {
-constexpr int WindowWidth = 900;
-constexpr int WindowHeight = 600;
+    constexpr int WindowWidth = 900;
+    constexpr int WindowHeight = 600;
 
-constexpr unsigned int SphereLatitudeSegments = 64;
-constexpr unsigned int SphereLongitudeSegments = 64;
-constexpr float SphereRadius = 1.0f;
+    constexpr unsigned int SphereLatitudeSegments = 64;
+    constexpr unsigned int SphereLongitudeSegments = 64;
+    constexpr float SphereRadius = 1.0f;
 
-struct Vertex 
-{
-    glm::vec3 position;
-    glm::vec3 normal;
-};
+    constexpr float LodFullDistance = 5.0f;
+    constexpr float LodSimpleDistance = 6.0f;
 
-struct SphereMesh // A simple structure to hold vertex and index data for a sphere mesh
-{
-    std::vector<Vertex> vertices;
-    std::vector<unsigned int> indices;
-};
+    constexpr float CameraMoveSpeed = 2.0f;
 
-// Generates a sphere mesh with the specified number of latitude and longitude segments and radius
-SphereMesh createSphere(
-    unsigned int latitudeSegments,
-    unsigned int longitudeSegments,
-	float radius)
-{
-    SphereMesh mesh;
 
-    for (unsigned int y = 0; y <= latitudeSegments; ++y)
+    struct Vertex
     {
-        float v = static_cast<float>(y) /
-            static_cast<float>(latitudeSegments);
+        glm::vec3 position;
+        glm::vec3 normal;
+    };
 
-        float theta = v * glm::pi<float>();
+    struct SphereMesh // A simple structure to hold vertex and index data for a sphere mesh
+    {
+        std::vector<Vertex> vertices;
+        std::vector<unsigned int> indices;
+    };
 
-        for (unsigned int x = 0; x <= longitudeSegments; ++x)
+    // Generates a sphere mesh with the specified number of latitude and longitude segments and radius
+    SphereMesh createSphere(
+        unsigned int latitudeSegments,
+        unsigned int longitudeSegments,
+        float radius)
+    {
+        SphereMesh mesh;
+
+        for (unsigned int y = 0; y <= latitudeSegments; ++y)
         {
-            float u = static_cast<float>(x) /
-                static_cast<float>(longitudeSegments);
+            float v = static_cast<float>(y) /
+                static_cast<float>(latitudeSegments);
 
-            float phi = u * glm::two_pi<float>();
+            float theta = v * glm::pi<float>();
 
-            glm::vec3 position;
+            for (unsigned int x = 0; x <= longitudeSegments; ++x)
+            {
+                float u = static_cast<float>(x) /
+                    static_cast<float>(longitudeSegments);
 
-            position.x =
-				radius * std::sin(theta) * std::cos(phi); //sin(theta) * cos(phi)
+                float phi = u * glm::two_pi<float>();
 
-            position.y =
-				radius * std::cos(theta); //cos(theta)
+                glm::vec3 position;
 
-            position.z =
-                radius * std::sin(theta) * std::sin(phi); //sin(theta) * sin(phi)
+                position.x =
+                    radius * std::sin(theta) * std::cos(phi); //sin(theta) * cos(phi)
 
-            glm::vec3 normal =
-                glm::normalize(position);
+                position.y =
+                    radius * std::cos(theta); //cos(theta)
 
-            mesh.vertices.push_back({
-                position,
-                normal
-                });
+                position.z =
+                    radius * std::sin(theta) * std::sin(phi); //sin(theta) * sin(phi)
+
+                glm::vec3 normal =
+                    glm::normalize(position);
+
+                mesh.vertices.push_back({
+                    position,
+                    normal
+                    });
+            }
+        }
+
+        for (unsigned int y = 0; y < latitudeSegments; ++y)
+        {
+            for (unsigned int x = 0; x < longitudeSegments; ++x)
+            {
+                unsigned int first =
+                    y * (longitudeSegments + 1) + x;
+
+                unsigned int second =
+                    first + longitudeSegments + 1;
+
+                mesh.indices.push_back(first);
+                mesh.indices.push_back(second);
+                mesh.indices.push_back(first + 1);
+
+                mesh.indices.push_back(second);
+                mesh.indices.push_back(second + 1);
+                mesh.indices.push_back(first + 1);
+            }
+        }
+
+        return mesh;
+    }
+
+    void glfwErrorCallback(int error, const char* description)
+    {
+        std::cerr << "GLFW error (" << error << "): " << description << '\n';
+    }
+
+    std::string readTextFile(const std::string& path)
+    {
+        std::ifstream file(path);
+        if (!file)
+        {
+            throw std::runtime_error("Could not open file: " + path);
+        }
+
+        std::ostringstream contents;
+        contents << file.rdbuf();
+        return contents.str();
+    }
+
+    GLuint compileShader(GLenum type, const std::string& source, const std::string& label)
+    {
+        const GLuint shader = glCreateShader(type);
+        const char* sourcePtr = source.c_str();
+
+        glShaderSource(shader, 1, &sourcePtr, nullptr);
+        glCompileShader(shader);
+
+        GLint success = GL_FALSE;
+        glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+
+        if (success == GL_FALSE)
+        {
+            GLint logLength = 0;
+            glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
+
+            std::string log(static_cast<std::size_t>(logLength), '\0');
+            glGetShaderInfoLog(shader, logLength, nullptr, log.data());
+
+            glDeleteShader(shader);
+            throw std::runtime_error("Shader compilation failed (" + label + "):\n" + log);
+        }
+
+        return shader;
+    }
+
+    GLuint createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath)
+    {
+        const std::string vertexSource = readTextFile(vertexPath);
+        const std::string fragmentSource = readTextFile(fragmentPath);
+
+        const GLuint vertexShader =
+            compileShader(GL_VERTEX_SHADER, vertexSource, vertexPath);
+        const GLuint fragmentShader =
+            compileShader(GL_FRAGMENT_SHADER, fragmentSource, fragmentPath);
+
+        const GLuint program = glCreateProgram();
+        glAttachShader(program, vertexShader);
+        glAttachShader(program, fragmentShader);
+        glLinkProgram(program);
+
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+
+        GLint success = GL_FALSE;
+        glGetProgramiv(program, GL_LINK_STATUS, &success);
+
+        if (success == GL_FALSE)
+        {
+            GLint logLength = 0;
+            glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
+
+            std::string log(static_cast<std::size_t>(logLength), '\0');
+            glGetProgramInfoLog(program, logLength, nullptr, log.data());
+
+            glDeleteProgram(program);
+            throw std::runtime_error("Shader program link failed:\n" + log);
+        }
+
+        return program;
+    }
+
+    void framebufferSizeCallback(GLFWwindow*, int width, int height)
+    {
+        glViewport(0, 0, width, height);
+    }
+
+    void processInput(GLFWwindow* window)
+    {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
+        {
+            glfwSetWindowShouldClose(window, GLFW_TRUE);
         }
     }
-
-    for (unsigned int y = 0; y < latitudeSegments; ++y)
-    {
-        for (unsigned int x = 0; x < longitudeSegments; ++x)
-        {
-            unsigned int first =
-                y * (longitudeSegments + 1) + x;
-
-            unsigned int second =
-                first + longitudeSegments + 1;
-
-            mesh.indices.push_back(first);
-            mesh.indices.push_back(second);
-            mesh.indices.push_back(first + 1);
-
-            mesh.indices.push_back(second);
-            mesh.indices.push_back(second + 1);
-            mesh.indices.push_back(first + 1);
-        }
-    }
-
-    return mesh;
-}
-
-void glfwErrorCallback(int error, const char* description)
-{
-    std::cerr << "GLFW error (" << error << "): " << description << '\n';
-}
-
-std::string readTextFile(const std::string& path)
-{
-    std::ifstream file(path);
-    if (!file)
-    {
-        throw std::runtime_error("Could not open file: " + path);
-    }
-
-    std::ostringstream contents;
-    contents << file.rdbuf();
-    return contents.str();
-}
-
-GLuint compileShader(GLenum type, const std::string& source, const std::string& label)
-{
-    const GLuint shader = glCreateShader(type);
-    const char* sourcePtr = source.c_str();
-
-    glShaderSource(shader, 1, &sourcePtr, nullptr);
-    glCompileShader(shader);
-
-    GLint success = GL_FALSE;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-
-    if (success == GL_FALSE)
-    {
-        GLint logLength = 0;
-        glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &logLength);
-
-        std::string log(static_cast<std::size_t>(logLength), '\0');
-        glGetShaderInfoLog(shader, logLength, nullptr, log.data());
-
-        glDeleteShader(shader);
-        throw std::runtime_error("Shader compilation failed (" + label + "):\n" + log);
-    }
-
-    return shader;
-}
-
-GLuint createShaderProgram(const std::string& vertexPath, const std::string& fragmentPath)
-{
-    const std::string vertexSource = readTextFile(vertexPath);
-    const std::string fragmentSource = readTextFile(fragmentPath);
-
-    const GLuint vertexShader =
-        compileShader(GL_VERTEX_SHADER, vertexSource, vertexPath);
-    const GLuint fragmentShader =
-        compileShader(GL_FRAGMENT_SHADER, fragmentSource, fragmentPath);
-
-    const GLuint program = glCreateProgram();
-    glAttachShader(program, vertexShader);
-    glAttachShader(program, fragmentShader);
-    glLinkProgram(program);
-
-    glDeleteShader(vertexShader);
-    glDeleteShader(fragmentShader);
-
-    GLint success = GL_FALSE;
-    glGetProgramiv(program, GL_LINK_STATUS, &success);
-
-    if (success == GL_FALSE)
-    {
-        GLint logLength = 0;
-        glGetProgramiv(program, GL_INFO_LOG_LENGTH, &logLength);
-
-        std::string log(static_cast<std::size_t>(logLength), '\0');
-        glGetProgramInfoLog(program, logLength, nullptr, log.data());
-
-        glDeleteProgram(program);
-        throw std::runtime_error("Shader program link failed:\n" + log);
-    }
-
-    return program;
-}
-
-void framebufferSizeCallback(GLFWwindow*, int width, int height)
-{
-    glViewport(0, 0, width, height);
-}
-
-void processInput(GLFWwindow* window)
-{
-    if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-    {
-        glfwSetWindowShouldClose(window, GLFW_TRUE);
-    }
-}
-} // namespace
+}// namespace
 
 int main()
 {
@@ -241,6 +249,9 @@ int main()
 
     std::cout << "OpenGL: " << glGetString(GL_VERSION) << '\n';
     std::cout << "Renderer: " << glGetString(GL_RENDERER) << '\n';
+
+	GpuTimer gpuTimer;
+    Benchmark benchmark;
 
 	// Create a sphere mesh with 64 latitude and longitude segments and a radius of 1.0
     SphereMesh sphere = createSphere(
@@ -326,8 +337,8 @@ int main()
     const GLint normalMatrixLocation = glGetUniformLocation(shaderProgram, "normalMatrix");
     const GLint viewPositionLocation = glGetUniformLocation(shaderProgram, "viewPosition");
     const GLint timeLocation = glGetUniformLocation(shaderProgram, "time");
-    const GLint debugModeLocation =
-        glGetUniformLocation(shaderProgram, "debugMode");
+    const GLint debugModeLocation = glGetUniformLocation(shaderProgram, "debugMode");
+    const GLint qualityLevelLocation = glGetUniformLocation(shaderProgram, "qualityLevel");
 
     if (modelLocation == -1 ||
         viewLocation == -1 ||
@@ -358,9 +369,7 @@ int main()
     // The view matrix converts world-space positions into view space.
     // Moving the world by the negative camera position places the
     // force-field sphere in front of the camera.
-    const glm::vec3 viewPosition(0.0f, 0.0f, 3.0f);
-    const glm::mat4 view =
-        glm::translate(glm::mat4(1.0f), -viewPosition);
+    glm::vec3 viewPosition(0.0f, 0.0f, 3.0f);
 
 
     // These values define the perspective viewing volume. Keeping them named and
@@ -374,15 +383,61 @@ int main()
     // Starts with the normal final hologram.
     DebugMode debugMode = DebugMode::Final;
 
-    // Start in full quality so the visual result remains
-    // identical to the current shader during integration.
-    QualityMode qualityMode = QualityMode::Full;
+    // Start in auto quality
+    QualityMode qualityMode = QualityMode::Auto;
+
+    int autoQualityLevel = 1;
+
+    float previousTime = static_cast<float>(glfwGetTime());
+
+    bool benchmarkKeyWasPressed = false;
+    bool benchmarkWasRunning = false;
 
     while (glfwWindowShouldClose(window) == GLFW_FALSE)
     {
+        const float currentTime = static_cast<float>(glfwGetTime());
+
+        const float deltaTime = currentTime - previousTime;
+
+        previousTime = currentTime;
+
         processInput(window);
         updateDebugControls(window, debugMode);
         updateQualityControls(window, qualityMode);
+
+        //Basic Camera Movement
+        if (!benchmark.isRunning())
+        {
+            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            {
+                viewPosition.z -=
+                    CameraMoveSpeed * deltaTime;
+            }
+
+            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            {
+                viewPosition.z +=
+                    CameraMoveSpeed * deltaTime;
+            }
+
+            viewPosition.z =
+                glm::max(
+                    viewPosition.z,
+                    SphereRadius + 0.2f
+                );
+        }
+
+        viewPosition.z = glm::max(viewPosition.z, SphereRadius + 0.2f);
+
+        const glm::mat4 view =glm::translate(glm::mat4(1.0f), -viewPosition);
+
+        // Sphere centre in world space.
+        const glm::vec3 sphereCenter = glm::vec3(model[3]);
+
+        // Distance between the camera and the sphere centre.
+        const float distanceToSphere = glm::length(viewPosition - sphereCenter);
+
+
         // Framebuffer dimensions can differ from window dimensions on high-DPI
         // displays. Reading the current framebuffer size keeps projected shapes
         // in the correct proportions after a resize. A minimized window may have
@@ -397,6 +452,77 @@ int main()
             continue;
         }
 
+        int qualityLevel = 1;
+
+        const int previousAutoQualityLevel =
+            autoQualityLevel;
+
+        switch (qualityMode)
+        {
+        case QualityMode::Simple:
+            qualityLevel = 0;
+            break;
+
+        case QualityMode::Full:
+            qualityLevel = 1;
+            break;
+
+        case QualityMode::Auto:
+        {
+            if (distanceToSphere > LodSimpleDistance)
+            {
+                autoQualityLevel = 0;
+            }
+            else if (distanceToSphere < LodFullDistance)
+            {
+                autoQualityLevel = 1;
+            }
+            
+        }
+            qualityLevel = autoQualityLevel;
+            break;
+        }
+
+
+        //DEBUG PURPOSES
+        if (autoQualityLevel != previousAutoQualityLevel)
+        {
+            std::cout
+                << "Auto LOD: "
+                << (autoQualityLevel == 1 ? "Full" : "Simple")
+                << " | distance: "
+                << distanceToSphere
+                << '\n';
+        }
+
+        const bool benchmarkKeyPressed = glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS;
+
+        if (benchmarkKeyPressed && !benchmarkKeyWasPressed && !benchmark.isRunning())
+        {
+            if (debugMode != DebugMode::Final)
+            {
+                std::cout
+                    << "Benchmark requires Debug Mode 0 (Final).\n";
+            }
+            else if (qualityMode == QualityMode::Auto)
+            {
+                std::cout
+                    << "Benchmark requires Simple or Full mode.\n";
+            }
+            else
+            {
+                const std::string label = qualityMode == QualityMode::Full? "Full": "Simple";
+
+                glfwSwapInterval(0);
+
+                benchmark.start(label);
+
+                benchmarkWasRunning = true;
+            }
+        }
+
+        benchmarkKeyWasPressed = benchmarkKeyPressed;
+
         const float aspectRatio =
             static_cast<float>(framebufferWidth) /
             static_cast<float>(framebufferHeight);
@@ -408,10 +534,8 @@ int main()
 
         glUseProgram(shaderProgram);
 
-        glUniform1i(
-            debugModeLocation,
-            static_cast<int>(debugMode)
-        );
+        glUniform1i(debugModeLocation, static_cast<int>(debugMode));
+        glUniform1i(qualityLevelLocation, qualityLevel);
 
         // glm::value_ptr exposes each GLM matrix as contiguous float data.
         // GL_FALSE means OpenGL should use the conventional GLM/OpenGL matrix
@@ -423,7 +547,8 @@ int main()
         glUniformMatrix3fv(
             normalMatrixLocation, 1, GL_FALSE, glm::value_ptr(normalMatrix));
         glUniform3fv(viewPositionLocation, 1, glm::value_ptr(viewPosition));
-        glUniform1f(timeLocation, static_cast<float>(glfwGetTime()));
+        glUniform1f(timeLocation, currentTime);
+
 
         glBindVertexArray(vao);
 
@@ -435,6 +560,25 @@ int main()
         glDepthMask(GL_FALSE);
 
         glEnable(GL_CULL_FACE);
+
+        double gpuMilliseconds = 0.0;
+
+        if (gpuTimer.tryGetElapsedMilliseconds(gpuMilliseconds))
+        {
+            benchmark.addSample(gpuMilliseconds);
+        }
+
+        if (benchmark.isWarmingUp())
+        {
+            benchmark.updateWarmup();
+        }
+
+        bool measuringGpu = false;
+
+        if (benchmark.isRunning() && !benchmark.isWarmingUp())
+        {
+            measuringGpu = gpuTimer.begin();
+        }
 
         // 1. Render back faces first
         glCullFace(GL_FRONT);
@@ -456,10 +600,22 @@ int main()
             nullptr
         );
 
+        if (measuringGpu)
+        {
+            gpuTimer.end();
+        }
+
         // Restore normal state
         glDepthMask(GL_TRUE);
         glDisable(GL_CULL_FACE);
         glDisable(GL_BLEND);
+
+        if (benchmarkWasRunning && !benchmark.isRunning())
+        {
+            glfwSwapInterval(1);
+
+            benchmarkWasRunning = false;
+        }
 
         glfwSwapBuffers(window);
         glfwPollEvents();
