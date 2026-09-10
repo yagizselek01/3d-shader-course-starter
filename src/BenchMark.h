@@ -13,7 +13,6 @@ public:
 
     bool isRunning() const;
     bool isWarmingUp() const;
-    bool isFinished() const;
 
 private:
     static constexpr int WarmupFrameCount = 120;
@@ -22,7 +21,6 @@ private:
     int warmupFrames = 0;
 
     bool running = false;
-    bool finished = false;
 
     std::string benchmarkLabel;
     std::vector<double> samples;

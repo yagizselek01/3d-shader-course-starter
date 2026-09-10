@@ -18,7 +18,6 @@ public:
 
 private:
     GLuint queryId = 0;
-
     bool measurementPending = false;
     bool queryActive = false;
 };

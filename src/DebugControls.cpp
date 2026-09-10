@@ -1,13 +1,10 @@
 #include "DebugControls.h"
-
 #include <GLFW/glfw3.h>
 #include <iostream>
 
-void updateDebugControls(
-    GLFWwindow* window,
-    DebugMode& debugMode)
+void updateDebugControls(GLFWwindow* window, DebugMode& debugMode)
 {
-    constexpr int DebugModeCount = 8;
+    constexpr int DebugModeCount = static_cast<int>(DebugMode::Count);
 
     static bool wasPressed[DebugModeCount] = {};
 
@@ -15,20 +12,14 @@ void updateDebugControls(
     {
         const int key = GLFW_KEY_0 + mode;
 
-        const bool isPressed =
-            glfwGetKey(window, key) == GLFW_PRESS;
+        const bool isPressed = glfwGetKey(window, key) == GLFW_PRESS;
 
         if (isPressed && !wasPressed[mode])
         {
-            debugMode =
-                static_cast<DebugMode>(mode);
+            debugMode = static_cast<DebugMode>(mode);
 
-            std::cout
-                << "Debug mode: "
-                << mode
-                << '\n';
+            std::cout<< "Debug mode: "<< mode<< '\n';
         }
-
         wasPressed[mode] = isPressed;
     }
 }

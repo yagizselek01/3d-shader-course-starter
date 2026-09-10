@@ -11,7 +11,8 @@ enum class DebugMode
     ValueNoise = 4,
     UnwarpedScanlines = 5,
     WarpedScanlines = 6,
-    FinalWithoutWarp = 7
+    FinalWithoutWarp = 7,
+    Count
 };
 
 void updateDebugControls(GLFWwindow* window,DebugMode& debugMode);

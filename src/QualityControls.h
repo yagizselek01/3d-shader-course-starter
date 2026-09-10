@@ -9,7 +9,4 @@ enum class QualityMode
     Auto = 2
 };
 
-void updateQualityControls(
-    GLFWwindow* window,
-    QualityMode& qualityMode
-);
+void updateQualityControls(GLFWwindow* window, QualityMode& qualityMode);

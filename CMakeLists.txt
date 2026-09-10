@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(ShaderCourseStarter
-    VERSION 0.1.0
-    DESCRIPTION "Minimal OpenGL/GLSL starter for 3D and Shader Programming"
-    LANGUAGES C CXX
+project(HolographicForceField
+    VERSION 1.0.0
+    DESCRIPTION "Procedural holographic force field in OpenGL and GLSL"
 )
 
 set(CMAKE_CXX_STANDARD 20)
@@ -45,17 +44,24 @@ target_include_directories(glad
         external/glad/include
 )
 
-add_executable(shader_course
+add_executable(holographic_force_field
     src/main.cpp
-    src/DebugControls.cpp
-    src/QualityControls.cpp
-    src/GpuTimer.cpp
     src/Benchmark.cpp
-
+    src/Benchmark.h
+    src/DebugControls.cpp
+    src/DebugControls.h
+    src/GpuTimer.cpp
+    src/GpuTimer.h
+    src/QualityControls.cpp
+    src/QualityControls.h
 )
 
+target_compile_definitions(holographic_force_field
+    PRIVATE
+        GLFW_INCLUDE_NONE
+)
 
-target_link_libraries(shader_course
+target_link_libraries(holographic_force_field
     PRIVATE
         glfw
         glad
@@ -63,23 +69,23 @@ target_link_libraries(shader_course
 )
 
 if(MSVC)
-    target_compile_options(shader_course PRIVATE /W4 /permissive-)
+    target_compile_options(holographic_force_field PRIVATE /W4 /permissive-)
 else()
-    target_compile_options(shader_course PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(holographic_force_field PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 
 # Put the executable in a predictable location for single- and multi-config generators.
-set_target_properties(shader_course PROPERTIES
+set_target_properties(holographic_force_field PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 foreach(CONFIG Debug Release RelWithDebInfo MinSizeRel)
     string(TOUPPER "${CONFIG}" CONFIG_UPPER)
-    set_target_properties(shader_course PROPERTIES
+    set_target_properties(holographic_force_field PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY_${CONFIG_UPPER} "${CMAKE_BINARY_DIR}/bin"
     )
 endforeach()
 
-# Keep runtime shader files synchronized whenever shader_course is built.
+# Keep runtime shader files synchronized whenever holographic_force_field is built.
 add_custom_target(copy_shaders
     COMMAND ${CMAKE_COMMAND} -E copy_directory
             "${CMAKE_SOURCE_DIR}/shaders"
@@ -88,13 +94,13 @@ add_custom_target(copy_shaders
     VERBATIM
 )
 
-add_dependencies(shader_course copy_shaders)
+add_dependencies(holographic_force_field copy_shaders)
 
 # When launching from a generated Visual Studio project, run from the
 # executable directory so relative paths such as shaders/basic.vert work.
-set_target_properties(shader_course PROPERTIES
+set_target_properties(holographic_force_field PROPERTIES
     VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
 )
 
 # Helpful when opening the generated solution in Visual Studio.
-set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY VS_STARTUP_PROJECT shader_course)
+set_property(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" PROPERTY VS_STARTUP_PROJECT holographic_force_field)

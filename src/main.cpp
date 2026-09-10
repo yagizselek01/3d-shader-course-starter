@@ -33,6 +33,12 @@ namespace
 
     constexpr float CameraMoveSpeed = 2.0f;
 
+    constexpr float FieldOfViewDegrees = 45.0f;
+    constexpr float NearPlane = 0.1f;
+    constexpr float FarPlane = 100.0f;
+
+    constexpr int SimpleQualityLevel = 0;
+    constexpr int FullQualityLevel = 1;
 
     struct Vertex
     {
@@ -40,52 +46,36 @@ namespace
         glm::vec3 normal;
     };
 
-    struct SphereMesh // A simple structure to hold vertex and index data for a sphere mesh
+    struct SphereMesh 
     {
         std::vector<Vertex> vertices;
         std::vector<unsigned int> indices;
     };
 
-    // Generates a sphere mesh with the specified number of latitude and longitude segments and radius
-    SphereMesh createSphere(
-        unsigned int latitudeSegments,
-        unsigned int longitudeSegments,
-        float radius)
+
+    SphereMesh createSphere(unsigned int latitudeSegments, unsigned int longitudeSegments, float radius)
     {
         SphereMesh mesh;
 
         for (unsigned int y = 0; y <= latitudeSegments; ++y)
         {
-            float v = static_cast<float>(y) /
-                static_cast<float>(latitudeSegments);
+            float v = static_cast<float>(y) / static_cast<float>(latitudeSegments);
 
             float theta = v * glm::pi<float>();
 
             for (unsigned int x = 0; x <= longitudeSegments; ++x)
             {
-                float u = static_cast<float>(x) /
-                    static_cast<float>(longitudeSegments);
+                float u = static_cast<float>(x) / static_cast<float>(longitudeSegments);
 
                 float phi = u * glm::two_pi<float>();
 
-                glm::vec3 position;
+                const glm::vec3 normal(
+                    std::sin(theta) * std::cos(phi),
+                    std::cos(theta),
+                    std::sin(theta) * std::sin(phi)
+                );
 
-                position.x =
-                    radius * std::sin(theta) * std::cos(phi); //sin(theta) * cos(phi)
-
-                position.y =
-                    radius * std::cos(theta); //cos(theta)
-
-                position.z =
-                    radius * std::sin(theta) * std::sin(phi); //sin(theta) * sin(phi)
-
-                glm::vec3 normal =
-                    glm::normalize(position);
-
-                mesh.vertices.push_back({
-                    position,
-                    normal
-                    });
+                mesh.vertices.push_back({normal * radius, normal});
             }
         }
 
@@ -93,11 +83,9 @@ namespace
         {
             for (unsigned int x = 0; x < longitudeSegments; ++x)
             {
-                unsigned int first =
-                    y * (longitudeSegments + 1) + x;
+                unsigned int first = y * (longitudeSegments + 1) + x;
 
-                unsigned int second =
-                    first + longitudeSegments + 1;
+                unsigned int second = first + longitudeSegments + 1;
 
                 mesh.indices.push_back(first);
                 mesh.indices.push_back(second);
@@ -161,10 +149,18 @@ namespace
         const std::string vertexSource = readTextFile(vertexPath);
         const std::string fragmentSource = readTextFile(fragmentPath);
 
-        const GLuint vertexShader =
-            compileShader(GL_VERTEX_SHADER, vertexSource, vertexPath);
-        const GLuint fragmentShader =
-            compileShader(GL_FRAGMENT_SHADER, fragmentSource, fragmentPath);
+        const GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexSource, vertexPath);
+        GLuint fragmentShader = 0;
+
+    try
+    {
+        fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentSource, fragmentPath);
+    }
+    catch (...)
+    {
+        glDeleteShader(vertexShader);
+        throw;
+    }
 
         const GLuint program = glCreateProgram();
         glAttachShader(program, vertexShader);
@@ -204,7 +200,7 @@ namespace
             glfwSetWindowShouldClose(window, GLFW_TRUE);
         }
     }
-}// namespace
+}
 
 int main()
 {
@@ -224,8 +220,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE);
 #endif
 
-    GLFWwindow* window =
-        glfwCreateWindow(WindowWidth, WindowHeight, "3D and Shader Programming", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(WindowWidth, WindowHeight, "3D and Shader Programming Yagiz Selek", nullptr, nullptr);
 
     if (window == nullptr)
     {
@@ -250,11 +245,9 @@ int main()
     std::cout << "OpenGL: " << glGetString(GL_VERSION) << '\n';
     std::cout << "Renderer: " << glGetString(GL_RENDERER) << '\n';
 
-	GpuTimer gpuTimer;
-    Benchmark benchmark;
 
 	// Create a sphere mesh with 64 latitude and longitude segments and a radius of 1.0
-    SphereMesh sphere = createSphere(
+    const SphereMesh sphere = createSphere(
         SphereLatitudeSegments,
         SphereLongitudeSegments,
         SphereRadius
@@ -275,7 +268,7 @@ int main()
     glBufferData(GL_ARRAY_BUFFER, 
         sizeof(Vertex) * sphere.vertices.size()
         , sphere.vertices.data(),
-		GL_STATIC_DRAW); // Upload vertex data to the GPU
+		GL_STATIC_DRAW);
 
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo); 
 
@@ -314,8 +307,7 @@ int main()
 
     try
     {
-        shaderProgram =
-            createShaderProgram("shaders/basic.vert", "shaders/basic.frag");
+        shaderProgram = createShaderProgram("shaders/basic.vert", "shaders/basic.frag");
     }
     catch (const std::exception& exception)
     {
@@ -327,10 +319,6 @@ int main()
         glfwTerminate();
         return 1;
     }
-
-    // Uniform locations identify the three matrix inputs in the vertex shader.
-    // We ask for them once after linking, then use the locations when sending
-    // matrix values from the CPU to the GPU before drawing.
     const GLint modelLocation = glGetUniformLocation(shaderProgram, "model");
     const GLint viewLocation = glGetUniformLocation(shaderProgram, "view");
     const GLint projectionLocation = glGetUniformLocation(shaderProgram, "projection");
@@ -340,9 +328,7 @@ int main()
     const GLint debugModeLocation = glGetUniformLocation(shaderProgram, "debugMode");
     const GLint qualityLevelLocation = glGetUniformLocation(shaderProgram, "qualityLevel");
 
-    if (modelLocation == -1 ||
-        viewLocation == -1 ||
-        projectionLocation == -1)
+    if (modelLocation == -1 || viewLocation == -1 || projectionLocation == -1)
     {
         std::cerr
             << "Note: one or more matrix uniforms are inactive. "
@@ -356,269 +342,234 @@ int main()
             << "This is expected if the current shader experiment does not use it.\n";
     }
 
-    // The sphere remains centered at the world origin.
-    // The identity model matrix therefore requires no additional transform.
-    glm::mat4 model(1.0f);
+    const glm::mat4 model(1.0f);
 
+    const glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(model)));
 
-    // Positions and normals transform differently. The inverse-transpose keeps
-    // normals perpendicular to their surfaces, including under non-uniform scale.
-    const glm::mat3 normalMatrix =
-        glm::transpose(glm::inverse(glm::mat3(model)));
-
-    // The view matrix converts world-space positions into view space.
-    // Moving the world by the negative camera position places the
-    // force-field sphere in front of the camera.
     glm::vec3 viewPosition(0.0f, 0.0f, 3.0f);
 
-
-    // These values define the perspective viewing volume. Keeping them named and
-    // visible makes it easy to ask: what changes when the field of view narrows,
-    // or when the near and far clipping planes move?
-    const float fieldOfView = glm::radians(45.0f);
-    const float nearPlane = 0.1f;
-    const float farPlane = 100.0f;
-
-    // Current shader visualization mode.
-    // Starts with the normal final hologram.
     DebugMode debugMode = DebugMode::Final;
 
     // Start in auto quality
     QualityMode qualityMode = QualityMode::Auto;
 
-    int autoQualityLevel = 1;
+    int autoQualityLevel = FullQualityLevel;
 
     float previousTime = static_cast<float>(glfwGetTime());
 
     bool benchmarkKeyWasPressed = false;
     bool benchmarkWasRunning = false;
-
-    while (glfwWindowShouldClose(window) == GLFW_FALSE)
     {
-        const float currentTime = static_cast<float>(glfwGetTime());
 
-        const float deltaTime = currentTime - previousTime;
-
-        previousTime = currentTime;
-
-        processInput(window);
-        updateDebugControls(window, debugMode);
-        updateQualityControls(window, qualityMode);
-
-        //Basic Camera Movement
-        if (!benchmark.isRunning())
+            GpuTimer gpuTimer;
+            Benchmark benchmark;
+        while (glfwWindowShouldClose(window) == GLFW_FALSE)
         {
-            if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+            const float currentTime = static_cast<float>(glfwGetTime());
+
+            const float deltaTime = currentTime - previousTime;
+
+            previousTime = currentTime;
+
+            processInput(window);
+
+            const bool benchmarkKeyPressed = glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS;
+
+		    //Don't change debug or quality mode while benchmarking, as it would invalidate the results.
+            if (!benchmark.isRunning())
             {
-                viewPosition.z -=
-                    CameraMoveSpeed * deltaTime;
+                updateDebugControls(window, debugMode);
+
+                updateQualityControls(window, qualityMode);
             }
 
-            if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+            if (benchmarkKeyPressed && !benchmarkKeyWasPressed && !benchmark.isRunning())
             {
-                viewPosition.z +=
-                    CameraMoveSpeed * deltaTime;
+                if (debugMode != DebugMode::Final)
+                {
+                    std::cout << "Benchmark requires Debug Mode 0 (Final).\n";
+                }
+                else if (qualityMode == QualityMode::Auto)
+                {
+                    std::cout << "Benchmark requires Simple or Full mode. Select F1 or F2 first.\n";
+                }
+                else
+                {
+                    const std::string label = qualityMode == QualityMode::Full ? "Full" : "Simple";
+
+                    // Every benchmark begins from exactly the same
+                    // camera position and therefore the same screen coverage.
+                    viewPosition = glm::vec3(0.0f, 0.0f, 3.0f);
+
+                    // Disable VSync so presentation rate does not limit the benchmark.
+                    glfwSwapInterval(0);
+
+                    benchmark.start(label);
+
+                    benchmarkWasRunning = true;
+                }
             }
 
-            viewPosition.z =
-                glm::max(
-                    viewPosition.z,
-                    SphereRadius + 0.2f
-                );
-        }
+            benchmarkKeyWasPressed = benchmarkKeyPressed;
 
-        viewPosition.z = glm::max(viewPosition.z, SphereRadius + 0.2f);
+            if (!benchmark.isRunning())
+            {
+                if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
+                {
+                    viewPosition.z -= CameraMoveSpeed * deltaTime;
+                }
 
-        const glm::mat4 view =glm::translate(glm::mat4(1.0f), -viewPosition);
+                if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
+                {
+                    viewPosition.z += CameraMoveSpeed * deltaTime;
+                }
 
-        // Sphere centre in world space.
-        const glm::vec3 sphereCenter = glm::vec3(model[3]);
+                viewPosition.z = glm::max(viewPosition.z, SphereRadius + 0.2f);
+            }
 
-        // Distance between the camera and the sphere centre.
-        const float distanceToSphere = glm::length(viewPosition - sphereCenter);
+            const glm::mat4 view =glm::translate(glm::mat4(1.0f), -viewPosition);
 
+            // Sphere centre in world space.
+            const glm::vec3 sphereCenter = glm::vec3(model[3]);
 
-        // Framebuffer dimensions can differ from window dimensions on high-DPI
-        // displays. Reading the current framebuffer size keeps projected shapes
-        // in the correct proportions after a resize. A minimized window may have
-        // no drawable area, so wait for events instead of dividing by zero.
-        int framebufferWidth = 0;
-        int framebufferHeight = 0;
-        glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+            // Distance between the camera and the sphere centre.
+            const float distanceToSphere = glm::length(viewPosition - sphereCenter);
 
-        if (framebufferWidth == 0 || framebufferHeight == 0)
-        {
+            int framebufferWidth = 0;
+            int framebufferHeight = 0;
+            glfwGetFramebufferSize(window, &framebufferWidth, &framebufferHeight);
+
+            if (framebufferWidth == 0 || framebufferHeight == 0)
+            {
+                glfwPollEvents();
+                continue;
+            }
+
+            int qualityLevel = 1;
+
+            const int previousAutoQualityLevel = autoQualityLevel;
+
+            switch (qualityMode)
+            {
+            case QualityMode::Simple:qualityLevel = SimpleQualityLevel;
+            break;
+
+            case QualityMode::Full:qualityLevel = FullQualityLevel;
+            break;
+
+            case QualityMode::Auto:
+            {
+                if (distanceToSphere > LodSimpleDistance)
+                {
+                    autoQualityLevel = SimpleQualityLevel;
+                }
+                else if (distanceToSphere < LodFullDistance)
+                {
+                    autoQualityLevel = FullQualityLevel;
+                }
+            }
+                qualityLevel = autoQualityLevel;
+                break;
+            }
+
+            if (autoQualityLevel != previousAutoQualityLevel)
+            {
+                std::cout
+                    << "Auto LOD: "
+                    << (autoQualityLevel == 1 ? "Full" : "Simple")
+                    << " | distance: "
+                    << distanceToSphere
+                    << '\n';
+            }
+
+            const float aspectRatio = static_cast<float>(framebufferWidth) / static_cast<float>(framebufferHeight);
+
+            const glm::mat4 projection = glm::perspective(glm::radians(FieldOfViewDegrees), aspectRatio, NearPlane, FarPlane);
+
+            glClearColor(0.08f, 0.09f, 0.12f, 1.0f);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+            glUseProgram(shaderProgram);
+
+            glUniform1i(debugModeLocation, static_cast<int>(debugMode));
+            glUniform1i(qualityLevelLocation, qualityLevel);
+
+            glUniformMatrix4fv(modelLocation, 1, GL_FALSE, glm::value_ptr(model));
+            glUniformMatrix4fv(viewLocation, 1, GL_FALSE, glm::value_ptr(view));
+            glUniformMatrix4fv(projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
+            glUniformMatrix3fv(normalMatrixLocation, 1, GL_FALSE, glm::value_ptr(normalMatrix));
+            glUniform3fv(viewPositionLocation, 1, glm::value_ptr(viewPosition));
+            glUniform1f(timeLocation, currentTime);
+
+            glBindVertexArray(vao);
+
+            glEnable(GL_DEPTH_TEST);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+            // Transparent object should not write into depth buffer
+            glDepthMask(GL_FALSE);
+
+            glEnable(GL_CULL_FACE);
+
+            double gpuMilliseconds = 0.0;
+
+            if (gpuTimer.tryGetElapsedMilliseconds(gpuMilliseconds))
+            {
+                benchmark.addSample(gpuMilliseconds);
+            }
+
+            bool measuringGpu = false;
+
+            if (benchmark.isWarmingUp())
+            {
+                benchmark.updateWarmup();
+            }
+            else if (benchmark.isRunning())
+            {
+                measuringGpu = gpuTimer.begin();
+            }
+
+            // 1. Render back faces first
+            glCullFace(GL_FRONT);
+
+            glDrawElements(
+                GL_TRIANGLES,
+                static_cast<GLsizei>(sphere.indices.size()),
+                GL_UNSIGNED_INT,
+                nullptr
+            );
+
+            // 2. Render front faces afterwards
+            glCullFace(GL_BACK);
+
+            glDrawElements(
+                GL_TRIANGLES,
+                static_cast<GLsizei>(sphere.indices.size()),
+                GL_UNSIGNED_INT,
+                nullptr
+            );
+
+            if (measuringGpu)
+            {
+                gpuTimer.end();
+            }
+
+            // Restore normal state
+            glDepthMask(GL_TRUE);
+            glDisable(GL_CULL_FACE);
+            glDisable(GL_BLEND);
+
+            if (benchmarkWasRunning && !benchmark.isRunning())
+            {
+                glfwSwapInterval(1);
+
+                benchmarkWasRunning = false;
+            }
+
+            glfwSwapBuffers(window);
             glfwPollEvents();
-            continue;
         }
-
-        int qualityLevel = 1;
-
-        const int previousAutoQualityLevel =
-            autoQualityLevel;
-
-        switch (qualityMode)
-        {
-        case QualityMode::Simple:
-            qualityLevel = 0;
-            break;
-
-        case QualityMode::Full:
-            qualityLevel = 1;
-            break;
-
-        case QualityMode::Auto:
-        {
-            if (distanceToSphere > LodSimpleDistance)
-            {
-                autoQualityLevel = 0;
-            }
-            else if (distanceToSphere < LodFullDistance)
-            {
-                autoQualityLevel = 1;
-            }
-            
-        }
-            qualityLevel = autoQualityLevel;
-            break;
-        }
-
-
-        //DEBUG PURPOSES
-        if (autoQualityLevel != previousAutoQualityLevel)
-        {
-            std::cout
-                << "Auto LOD: "
-                << (autoQualityLevel == 1 ? "Full" : "Simple")
-                << " | distance: "
-                << distanceToSphere
-                << '\n';
-        }
-
-        const bool benchmarkKeyPressed = glfwGetKey(window, GLFW_KEY_B) == GLFW_PRESS;
-
-        if (benchmarkKeyPressed && !benchmarkKeyWasPressed && !benchmark.isRunning())
-        {
-            if (debugMode != DebugMode::Final)
-            {
-                std::cout
-                    << "Benchmark requires Debug Mode 0 (Final).\n";
-            }
-            else if (qualityMode == QualityMode::Auto)
-            {
-                std::cout
-                    << "Benchmark requires Simple or Full mode.\n";
-            }
-            else
-            {
-                const std::string label = qualityMode == QualityMode::Full? "Full": "Simple";
-
-                glfwSwapInterval(0);
-
-                benchmark.start(label);
-
-                benchmarkWasRunning = true;
-            }
-        }
-
-        benchmarkKeyWasPressed = benchmarkKeyPressed;
-
-        const float aspectRatio =
-            static_cast<float>(framebufferWidth) /
-            static_cast<float>(framebufferHeight);
-        const glm::mat4 projection =
-            glm::perspective(fieldOfView, aspectRatio, nearPlane, farPlane);
-
-        glClearColor(0.08f, 0.09f, 0.12f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-        glUseProgram(shaderProgram);
-
-        glUniform1i(debugModeLocation, static_cast<int>(debugMode));
-        glUniform1i(qualityLevelLocation, qualityLevel);
-
-        // glm::value_ptr exposes each GLM matrix as contiguous float data.
-        // GL_FALSE means OpenGL should use the conventional GLM/OpenGL matrix
-        // layout directly, without transposing it during the upload.
-        glUniformMatrix4fv(modelLocation, 1, GL_FALSE, glm::value_ptr(model));
-        glUniformMatrix4fv(viewLocation, 1, GL_FALSE, glm::value_ptr(view));
-        glUniformMatrix4fv(
-            projectionLocation, 1, GL_FALSE, glm::value_ptr(projection));
-        glUniformMatrix3fv(
-            normalMatrixLocation, 1, GL_FALSE, glm::value_ptr(normalMatrix));
-        glUniform3fv(viewPositionLocation, 1, glm::value_ptr(viewPosition));
-        glUniform1f(timeLocation, currentTime);
-
-
-        glBindVertexArray(vao);
-
-        glEnable(GL_DEPTH_TEST);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-        // Transparent object should not write into depth buffer
-        glDepthMask(GL_FALSE);
-
-        glEnable(GL_CULL_FACE);
-
-        double gpuMilliseconds = 0.0;
-
-        if (gpuTimer.tryGetElapsedMilliseconds(gpuMilliseconds))
-        {
-            benchmark.addSample(gpuMilliseconds);
-        }
-
-        if (benchmark.isWarmingUp())
-        {
-            benchmark.updateWarmup();
-        }
-
-        bool measuringGpu = false;
-
-        if (benchmark.isRunning() && !benchmark.isWarmingUp())
-        {
-            measuringGpu = gpuTimer.begin();
-        }
-
-        // 1. Render back faces first
-        glCullFace(GL_FRONT);
-
-        glDrawElements(
-            GL_TRIANGLES,
-            static_cast<GLsizei>(sphere.indices.size()),
-            GL_UNSIGNED_INT,
-            nullptr
-        );
-
-        // 2. Render front faces afterwards
-        glCullFace(GL_BACK);
-
-        glDrawElements(
-            GL_TRIANGLES,
-            static_cast<GLsizei>(sphere.indices.size()),
-            GL_UNSIGNED_INT,
-            nullptr
-        );
-
-        if (measuringGpu)
-        {
-            gpuTimer.end();
-        }
-
-        // Restore normal state
-        glDepthMask(GL_TRUE);
-        glDisable(GL_CULL_FACE);
-        glDisable(GL_BLEND);
-
-        if (benchmarkWasRunning && !benchmark.isRunning())
-        {
-            glfwSwapInterval(1);
-
-            benchmarkWasRunning = false;
-        }
-
-        glfwSwapBuffers(window);
-        glfwPollEvents();
     }
 
     glDeleteProgram(shaderProgram);

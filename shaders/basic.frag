@@ -76,14 +76,27 @@ void main()
     vec3 V = normalize(viewPosition - worldPosition);
 
 
-    // Calculate the fresnel effect, clamping the dot product to ensure it remains in the range [0, 1].
+    // Stylized two-sided Fresnel term. abs() gives front/back symmetry;
+    // clamp() guards against small floating-point overshoot after normalization.
     float fresnel = 1.0 - clamp(abs(dot(N, V)), 0.0, 1.0);
 
     float fresnelRim = pow(fresnel, FresnelPower);
+    
+    if (debugMode == 1)
+    {
+    FragColor = vec4(vec3(fresnel), 1.0);
+    return;
+    }
+
+    if (debugMode == 2)
+    {
+    FragColor = vec4(vec3(fresnelRim), 1.0);
+    return;
+    }
 
     // Calculate the rim effect based on the fresnel effect
     float fieldIntensity = fresnelRim * 0.8 + 0.2;
-    
+
     // Procedural scanlines and coordinate distortion
 
     vec2 pos = worldPosition.xy;
@@ -98,27 +111,28 @@ void main()
 
     // Noise is required by the full effect and by the debug modes
     // that explicitly visualize value noise or warped scanlines.
-    bool needsNoise = qualityLevel == 1 || debugMode == 4 || debugMode == 6;
+    bool finalUsesNoiseWarp = debugMode == 0 && qualityLevel == 1;
+
+    bool needsNoise = finalUsesNoiseWarp || debugMode == 4 || debugMode == 6;
 
 if (needsNoise)
 {
-    vec2 noiseCoord =
-        pos * NoiseScale +
-        time * NoiseScrollSpeed;
+    vec2 noiseCoord = pos * NoiseScale + time * NoiseScrollSpeed;
 
-    noiseX =
-        valueNoise(noiseCoord);
+    noiseX = valueNoise(noiseCoord);
 
-    noiseY =
-        valueNoise(
-            noiseCoord + NoiseSampleOffset
-        );
+    noiseY = valueNoise(noiseCoord + NoiseSampleOffset);
 
-    vec2 noiseWarp =
-        vec2(noiseX, noiseY) * 2.0 - 1.0;
+    if (debugMode == 4)
+    {
+    FragColor = vec4(noiseX, noiseY, 0.0, 1.0);
 
-    warpedPos =
-        pos + noiseWarp * WarpStrength;
+    return;
+    }
+
+    vec2 noiseWarp = vec2(noiseX, noiseY) * 2.0 - 1.0;
+
+    warpedPos = pos + noiseWarp * WarpStrength;
 }
     
     vec2 effectPos = (debugMode == 7) ? pos : warpedPos;
@@ -133,20 +147,39 @@ if (needsNoise)
     float breakupNoise = hash(vec2(floor(pos.x * 30.0), 
     floor(pos.y * 30.0 + time * 6.0)));
 
+    if (debugMode == 3)
+    {
+        FragColor = vec4(vec3(breakupNoise), 1.0);
+
+        return;
+    }
+
     // warp the y coordinates of the lines to create a dynamic effect
     float warpedYline01 = effectPos.y + jitterOffset + (breakupNoise - 0.5) * 0.5;
 
     vec2 bandP = mix(pos, effectPos, 0.6); // mix the original and warped coordinates for the energy bands
 
-    // Clean scanline evaluated in the original coordinate domain
-    float unwarpedLine = sin(pos.y * MainLineFrequency - time * MainLineSpeed) * 0.5 + 0.5;
+    if (debugMode == 5)
+    {
+        float unwarpedLine =sin(pos.y * MainLineFrequency - time * MainLineSpeed);
 
-    // The exact same scanline evaluated in the noise-warped domain
-    float noiseWarpedLine = sin(warpedPos.y * MainLineFrequency - time * MainLineSpeed) * 0.5 + 0.5;
+        float unwarpedLineMask = smoothstep(0.82, 1.0, unwarpedLine);
 
-    float unwarpedLineMask = smoothstep(0.92, 1.0, unwarpedLine);
+        FragColor = vec4(vec3(unwarpedLineMask), 1.0);
 
-    float noiseWarpedLineMask = smoothstep(0.92, 1.0, noiseWarpedLine);
+        return;
+    }
+
+    if (debugMode == 6)
+    {
+        float noiseWarpedLine = sin(warpedPos.y * MainLineFrequency - time * MainLineSpeed);
+
+        float noiseWarpedLineMask = smoothstep(0.82, 1.0, noiseWarpedLine);
+
+        FragColor = vec4(vec3(noiseWarpedLineMask), 1.0);
+
+        return;
+    }
 
 
     float warpedYline02 = bandP.y + 0.05 * sin(bandP.x * 8.0 + time * 2.0);
@@ -188,44 +221,8 @@ if (needsNoise)
     float alpha = 0.02 + fieldIntensity * 0.6 + mainPulse * 0.15; 
 
     //Debug Mode
-    
-    switch (debugMode)
-{
-    case 1:
-        // Raw Fresnel value
-        FragColor = vec4(vec3(fresnel), 1.0);
-        return;
 
-    case 2:
-        // Fresnel after pow() shaping
-        FragColor = vec4(vec3(fresnelRim), 1.0);
-        return;
-
-    case 3:
-        // Discrete hash-based breakup
-        FragColor = vec4(vec3(breakupNoise), 1.0);
-        return;
-
-    case 4:
-        // Smooth value noise
-        FragColor = vec4(vec3(noiseX), 1.0);
-        return;
-
-    case 5:
-        // Scanlines evaluated in the original coordinate domain
-        FragColor = vec4(vec3(unwarpedLineMask), 1.0);
-        return;
-
-    case 6:
-        // Same scanline function evaluated in the noise-warped domain
-        FragColor = vec4(vec3(noiseWarpedLineMask), 1.0);
-        return;
-
-    default:
-        break;
-}
-
-FragColor = vec4(finalColor, alpha);
+    FragColor = vec4(finalColor, alpha);
 }
 
 

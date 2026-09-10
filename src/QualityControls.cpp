@@ -3,22 +3,17 @@
 #include <GLFW/glfw3.h>
 #include <iostream>
 
-void updateQualityControls(
-    GLFWwindow* window,
-    QualityMode& qualityMode)
+void updateQualityControls(GLFWwindow* window, QualityMode& qualityMode)
 {
     static bool f1WasPressed = false;
     static bool f2WasPressed = false;
     static bool f3WasPressed = false;
 
-    const bool f1Pressed =
-        glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS;
+    const bool f1Pressed = glfwGetKey(window, GLFW_KEY_F1) == GLFW_PRESS;
 
-    const bool f2Pressed =
-        glfwGetKey(window, GLFW_KEY_F2) == GLFW_PRESS;
+    const bool f2Pressed = glfwGetKey(window, GLFW_KEY_F2) == GLFW_PRESS;
 
-    const bool f3Pressed =
-        glfwGetKey(window, GLFW_KEY_F3) == GLFW_PRESS;
+    const bool f3Pressed = glfwGetKey(window, GLFW_KEY_F3) == GLFW_PRESS;
 
     if (f1Pressed && !f1WasPressed)
     {
