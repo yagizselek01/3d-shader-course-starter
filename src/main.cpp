@@ -88,12 +88,12 @@ namespace
                 unsigned int second = first + longitudeSegments + 1;
 
                 mesh.indices.push_back(first);
-                mesh.indices.push_back(second);
                 mesh.indices.push_back(first + 1);
+                mesh.indices.push_back(second);
 
                 mesh.indices.push_back(second);
-                mesh.indices.push_back(second + 1);
                 mesh.indices.push_back(first + 1);
+                mesh.indices.push_back(second + 1);
             }
         }
 
